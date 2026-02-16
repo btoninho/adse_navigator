@@ -36,5 +36,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test browser-side invoice parser
+        run: npx tsx scripts/test_browser_parser.ts
+
       - name: Build
         run: npm run build

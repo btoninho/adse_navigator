@@ -2,20 +2,17 @@
 
 import { useState, useCallback, useRef } from "react";
 import procedures from "../../../data/procedures.json";
+import {
+  type InvoiceItem,
+  type Provider,
+  PROVIDERS,
+  detectProvider,
+  reconstructLines,
+} from "../../lib/invoice-parser";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface InvoiceItem {
-  date: string;
-  code: string;
-  description: string;
-  qty: number;
-  unitValue: number;
-  efrValue: number;
-  clientValue: number;
-}
 
 interface CheckedItem extends InvoiceItem {
   status: "ok" | "diff" | "variable" | "not_found";
@@ -34,162 +31,6 @@ interface Procedure {
   adseCharge: number;
   copayment: number;
   [key: string]: unknown;
-}
-
-type ProviderParser = (text: string) => InvoiceItem[];
-
-// ---------------------------------------------------------------------------
-// Provider registry — pluggable structure for future providers
-// ---------------------------------------------------------------------------
-
-interface Provider {
-  id: string;
-  label: string;
-  detect: (text: string) => boolean;
-  parse: ProviderParser;
-}
-
-const PROVIDERS: Provider[] = [
-  {
-    id: "cuf",
-    label: "CUF",
-    detect: (text) => /\bCUF\b/i.test(text),
-    parse: parseCUF,
-  },
-  // Future providers go here:
-  // { id: "luz", label: "Luz Saúde", detect: ..., parse: parseLuz },
-  // { id: "lusiadas", label: "Lusíadas", detect: ..., parse: parseLusiadas },
-];
-
-// ---------------------------------------------------------------------------
-// CUF invoice parser (ported from scripts/check_invoice.py)
-// ---------------------------------------------------------------------------
-
-/** Parse Portuguese decimal: "1.234,56" → 1234.56 */
-function parsePtDecimal(s: string): number {
-  return parseFloat(s.replace(/\./g, "").replace(",", "."));
-}
-
-// pdfjs-dist renders CUF invoices with a different column order than pdfplumber:
-//   [description] qty clientValue date totalValue code efrValue
-//
-// When descriptions span multiple lines, the data line has no description prefix:
-//   qty clientValue date totalValue code efrValue
-
-// Full line: description qty clientValue date totalValue code efrValue
-const FULL_LINE_RE =
-  /^(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+([\d.,]+)\s*$/;
-
-// Full line with CHNM: description qty clientValue date totalValue code chnm efrValue
-const FULL_LINE_CHNM_RE =
-  /^(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+(\d{5,})\s+([\d.,]+)\s*$/;
-
-// Data-only line (description on preceding lines): qty clientValue date totalValue code efrValue
-const DATA_RE =
-  /^(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+([\d.,]+)\s*$/;
-
-// Data-only with CHNM: qty clientValue date totalValue code chnm efrValue
-const DATA_CHNM_RE =
-  /^(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+(\d{5,})\s+([\d.,]+)\s*$/;
-
-// Lines to skip (headers, footers, section separators)
-const SKIP_RE =
-  /^(Sub-Total|Total|Contagem|Hospital|Isento|Emitido|L06C|Morada|Tel\.|Sede|Capital|Fatura|Pág\.|Original|Data de|Nr\.|ATCUD|Cliente|Acto|Unitário|Qtd\.|EFR|Pagamento|O talão|CONSERVE|Convenção|Em caso|vigor|\*)/;
-
-// Invoice section headers (all-caps category names) — skip from descriptions
-const SECTION_RE =
-  /^(URGÊNCIA|SERVIÇOS|PATOLOGIA|ANÁLISES|ANATOMIA|CIRURGIA|CONSULTAS|RX |TAC|ECOGRAFIA|MEDICINA|ESTOMATOLOGIA|FARMACOS|IMUNOHEMOTERAPIA|ENDOSCOPIA|CARDIOLOGIA|DERMATOLOGIA|FISIATRIA|GASTROENTEROLOGIA|GINECOLOGIA|NEUROLOGIA|OFTALMOLOGIA|ORTOPEDIA|OTORRINOLARINGOLOGIA|PEDIATRIA|PNEUMOLOGIA|PSICOLOGIA|PSIQUIATRIA|RADIOLOGIA|UROLOGIA|SERVIÇOS ESPECIAIS|RX CONVENCIONAL)/;
-
-function parseCUF(text: string): InvoiceItem[] {
-  const items: InvoiceItem[] = [];
-  const lines = text.split("\n");
-  const descBuffer: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    // Try full line with CHNM first (drugs)
-    let m = line.match(FULL_LINE_CHNM_RE);
-    if (m) {
-      items.push({
-        date: m[4],
-        code: m[6],
-        description: m[1].trim(),
-        qty: parseFloat(m[2]),
-        unitValue: parsePtDecimal(m[5]) / parseFloat(m[2]),
-        efrValue: parsePtDecimal(m[8]),
-        clientValue: parsePtDecimal(m[3]),
-      });
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Try full line (description + data on same line)
-    m = line.match(FULL_LINE_RE);
-    if (m) {
-      items.push({
-        date: m[4],
-        code: m[6],
-        description: m[1].trim(),
-        qty: parseFloat(m[2]),
-        unitValue: parsePtDecimal(m[5]) / parseFloat(m[2]),
-        efrValue: parsePtDecimal(m[7]),
-        clientValue: parsePtDecimal(m[3]),
-      });
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Try data-only with CHNM (description was on previous lines)
-    m = line.match(DATA_CHNM_RE);
-    if (m) {
-      items.push({
-        date: m[3],
-        code: m[5],
-        description: descBuffer.join(" ").trim(),
-        qty: parseFloat(m[1]),
-        unitValue: parsePtDecimal(m[4]) / parseFloat(m[1]),
-        efrValue: parsePtDecimal(m[7]),
-        clientValue: parsePtDecimal(m[2]),
-      });
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Try data-only line
-    m = line.match(DATA_RE);
-    if (m) {
-      items.push({
-        date: m[3],
-        code: m[5],
-        description: descBuffer.join(" ").trim(),
-        qty: parseFloat(m[1]),
-        unitValue: parsePtDecimal(m[4]) / parseFloat(m[1]),
-        efrValue: parsePtDecimal(m[6]),
-        clientValue: parsePtDecimal(m[2]),
-      });
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Skip known non-description lines
-    if (SKIP_RE.test(line)) {
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Skip section headers (category names) — don't include in descriptions
-    if (SECTION_RE.test(line)) {
-      descBuffer.length = 0;
-      continue;
-    }
-
-    // Buffer as potential description line for the next data line
-    descBuffer.push(line);
-  }
-
-  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -281,28 +122,11 @@ async function extractTextFromPDF(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    // Reconstruct lines by tracking Y positions
     const textItems = content.items
       .filter((item) => "str" in item)
       .map((item) => item as unknown as { str: string; transform: number[] });
 
-    let currentY: number | null = null;
-    let currentLine = "";
-    const lineTexts: string[] = [];
-
-    for (const item of textItems) {
-      const y = Math.round(item.transform[5]);
-      if (currentY !== null && Math.abs(y - currentY) > 2) {
-        lineTexts.push(currentLine);
-        currentLine = item.str;
-      } else {
-        currentLine += (currentLine ? " " : "") + item.str;
-      }
-      currentY = y;
-    }
-    if (currentLine) lineTexts.push(currentLine);
-
-    pages.push(lineTexts.join("\n"));
+    pages.push(reconstructLines(textItems).join("\n"));
   }
 
   return pages.join("\n");
@@ -353,14 +177,14 @@ export default function InvoiceChecker() {
       const text = await extractTextFromPDF(file);
 
       // Detect provider
-      const provider = PROVIDERS.find((p) => p.detect(text));
+      const provider = detectProvider(text);
 
       if (!provider) {
         setState({
           phase: "error",
           message:
             "Formato de fatura não reconhecido. Prestadores suportados: " +
-            PROVIDERS.map((p) => p.label).join(", ") +
+            PROVIDERS.map((p: Provider) => p.label).join(", ") +
             ".",
         });
         return;
