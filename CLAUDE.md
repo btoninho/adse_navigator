@@ -1,4 +1,4 @@
-# ADSE Navigator
+# ADSE Navegador
 
 Mobile-friendly web app to browse ADSE Regime Convencionado pricing tables.
 
