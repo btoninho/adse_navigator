@@ -14,6 +14,10 @@ python3 scripts/parse_excel.py
 # Validate JSON against Excel source
 python3 scripts/validate.py
 
+# Check an invoice PDF against the pricing table
+pip install pdfplumber  # one-time
+python3 scripts/check_invoice.py path/to/invoice.pdf
+
 # Dev server
 npm run dev
 
@@ -47,6 +51,7 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 
 - `scripts/parse_excel.py` — Excel parser
 - `scripts/validate.py` — JSON vs Excel cross-check
+- `scripts/check_invoice.py` — PDF invoice checker (requires `pdfplumber`)
 - `data/procedures.json` — All procedures (~3,400 rows)
 - `data/rules.json` — Category-specific rules
 - `data/metadata.json` — Version info, category counts

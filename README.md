@@ -12,6 +12,7 @@ Search across 3,400+ medical procedure codes, organized in 18 categories, with A
 - **18 categories** — from Análises Clínicas to Cirurgia, Medicina Dentária, and more
 - **Category-specific rules** — expandable panel with ADSE-specific rules per category
 - **Mobile-first** — card-based layout on mobile, table view on desktop
+- **Invoice checker** — validate PDF invoices against the ADSE pricing table
 - **Static site** — no backend needed, deployed on Vercel
 
 ## Quick Start
@@ -53,6 +54,17 @@ python3 scripts/validate.py
 git add data/ && git commit -m "Update pricing table" && git push
 ```
 
+## Invoice Checker
+
+Verify that a hospital invoice charges the correct ADSE prices:
+
+```bash
+pip install pdfplumber  # one-time setup
+python3 scripts/check_invoice.py path/to/invoice.pdf
+```
+
+The script extracts every line item from the PDF and compares the ADSE charge and beneficiary copayment against the official table. It flags any price differences and handles known exceptions like code 6631 (hospital medications with variable pricing).
+
 ## Architecture
 
 - **Data pipeline**: `scripts/parse_excel.py` converts the `.xlsx` into `data/*.json` at build time
@@ -66,7 +78,8 @@ git add data/ && git commit -m "Update pricing table" && git push
 ```
 ├── scripts/
 │   ├── parse_excel.py       # Excel → JSON parser
-│   └── validate.py          # JSON vs Excel cross-check
+│   ├── validate.py          # JSON vs Excel cross-check
+│   └── check_invoice.py     # PDF invoice checker
 ├── data/
 │   ├── procedures.json      # All procedures (~3,400 rows)
 │   ├── rules.json           # Category-specific rules
