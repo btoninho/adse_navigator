@@ -159,10 +159,22 @@ async function main() {
     ],
   });
 
-  // --- Lusíadas ---
+  // --- Lusíadas (single consultation) ---
   await testInvoice({
     name: "Lusíadas",
     pdfPath: resolve(REPO_ROOT, "invoice-lusiadas.pdf"),
+    expectedProvider: "lusiadas",
+    expectedCount: 1,
+    expectedCodes: ["38"],
+    spotChecks: [
+      { index: 0, code: "38", efrValue: 28.0, clientValue: 7.0 },
+    ],
+  });
+
+  // --- Lusíadas 02 (multi-page hospital stay) ---
+  await testInvoice({
+    name: "Lusíadas 02",
+    pdfPath: resolve(REPO_ROOT, "invoice-lusiadas02.pdf"),
     expectedProvider: "lusiadas",
     expectedCount: 116,
     expectedCodes: [
