@@ -1,0 +1,21 @@
+{
+  "name": "ADSE Navegador",
+  "short_name": "ADSE",
+  "description": "Tabela de preços e regras do Regime Convencionado ADSE",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

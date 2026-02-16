@@ -5,6 +5,15 @@ import metadata from "../../data/metadata.json";
 export const generateMetadata = (): Metadata => ({
   title: "ADSE Navegador — Tabela Regime Convencionado",
   description: `Pesquise ${metadata.totalProcedures} procedimentos ADSE em ${metadata.categories.length} categorias. Tabela de ${metadata.tableDate}.`,
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "ADSE Navegador",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 });
 
 export default function RootLayout({
@@ -14,7 +23,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt">
+      <head>
+        <meta name="theme-color" content="#1d4ed8" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      </head>
       <body className="bg-gray-50 text-gray-900 antialiased min-h-screen flex flex-col">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');`,
+          }}
+        />
         <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
             <a href="/" className="font-bold text-lg text-blue-700">
