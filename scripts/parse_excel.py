@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Parse ADSE Regime Convencionado Excel file into structured JSON.
+"""Parse ADSE Regime Convencionado Excel files into structured JSON.
 
 Usage:
     python3 scripts/parse_excel.py [path/to/file.xlsx]
 
-If no path is given, auto-detects *.xlsx in the repo root.
-Outputs: data/procedures.json, data/rules.json, data/metadata.json
+If no path is given, processes ALL *.xlsx files in the repo root.
+Outputs:
+  - data/procedures.json, data/rules.json, data/metadata.json  (latest version, backwards compat)
+  - public/data/{date}/procedures.json, rules.json, metadata.json  (per-version)
+  - public/data/versions.json  (index of all versions)
 """
 
 import json
@@ -20,6 +23,7 @@ import openpyxl
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
+PUBLIC_DATA_DIR = REPO_ROOT / "public" / "data"
 
 # Portuguese month mapping for filename date extraction
 PT_MONTHS = {
@@ -57,12 +61,36 @@ def extract_date_from_filename(filename: str) -> str:
     return "unknown"
 
 
-def find_xlsx_file() -> Path:
-    """Auto-detect the xlsx file in the repo root."""
+PT_MONTH_LABELS = {
+    "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+    "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+    "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro",
+}
+
+
+def date_to_label(date_str: str) -> str:
+    """Convert '2026-02-01' to 'Fevereiro 2026'."""
+    parts = date_str.split("-")
+    if len(parts) == 3:
+        month_label = PT_MONTH_LABELS.get(parts[1], parts[1])
+        return f"{month_label} {parts[0]}"
+    return date_str
+
+
+def find_all_xlsx_files() -> list[Path]:
+    """Find all xlsx files in the repo root, sorted by extracted date."""
     files = list(REPO_ROOT.glob("*.xlsx"))
     if not files:
         print("ERROR: No .xlsx file found in repo root.", file=sys.stderr)
         sys.exit(1)
+    # Sort by extracted date (newest first)
+    files.sort(key=lambda f: extract_date_from_filename(f.name), reverse=True)
+    return files
+
+
+def find_xlsx_file() -> Path:
+    """Auto-detect the xlsx file in the repo root."""
+    files = find_all_xlsx_files()
     if len(files) > 1:
         print(f"WARNING: Multiple .xlsx files found, using: {files[0].name}", file=sys.stderr)
     return files[0]
@@ -292,17 +320,8 @@ def parse_rules_sheet(ws):
     return rules
 
 
-def main():
-    # Determine xlsx path
-    if len(sys.argv) > 1:
-        xlsx_path = Path(sys.argv[1]).resolve()
-    else:
-        xlsx_path = find_xlsx_file()
-
-    if not xlsx_path.exists():
-        print(f"ERROR: File not found: {xlsx_path}", file=sys.stderr)
-        sys.exit(1)
-
+def parse_xlsx(xlsx_path: Path):
+    """Parse a single xlsx file and return (procedures, rules, metadata)."""
     print(f"Parsing: {xlsx_path.name}")
 
     wb = openpyxl.load_workbook(str(xlsx_path), read_only=True, data_only=True)
@@ -375,21 +394,89 @@ def main():
         ],
     }
 
-    # Write output
-    DATA_DIR.mkdir(exist_ok=True)
+    print(f"  → {len(all_procedures)} procedures, {len(category_counts)} categories")
+    return all_procedures, all_rules, metadata
 
-    with open(DATA_DIR / "procedures.json", "w", encoding="utf-8") as f:
-        json.dump(all_procedures, f, ensure_ascii=False, indent=2)
 
-    with open(DATA_DIR / "rules.json", "w", encoding="utf-8") as f:
-        json.dump(all_rules, f, ensure_ascii=False, indent=2)
+def write_version_data(out_dir: Path, procedures, rules, metadata):
+    """Write procedures.json, rules.json, metadata.json to a directory."""
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(DATA_DIR / "metadata.json", "w", encoding="utf-8") as f:
+    with open(out_dir / "procedures.json", "w", encoding="utf-8") as f:
+        json.dump(procedures, f, ensure_ascii=False, indent=2)
+
+    with open(out_dir / "rules.json", "w", encoding="utf-8") as f:
+        json.dump(rules, f, ensure_ascii=False, indent=2)
+
+    with open(out_dir / "metadata.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
 
-    print(f"\nDone! {len(all_procedures)} procedures across {len(category_counts)} categories.")
-    print(f"Table date: {table_date}")
-    print(f"Output: {DATA_DIR}/")
+
+def main():
+    if len(sys.argv) > 1:
+        # Single file mode (backwards compatible)
+        xlsx_path = Path(sys.argv[1]).resolve()
+        if not xlsx_path.exists():
+            print(f"ERROR: File not found: {xlsx_path}", file=sys.stderr)
+            sys.exit(1)
+        xlsx_files = [xlsx_path]
+    else:
+        xlsx_files = find_all_xlsx_files()
+
+    # Parse all xlsx files
+    versions = []  # (date, label, sourceFile, totalProcedures, procedures, rules, metadata)
+    for xlsx_path in xlsx_files:
+        if not xlsx_path.exists():
+            print(f"ERROR: File not found: {xlsx_path}", file=sys.stderr)
+            sys.exit(1)
+
+        procedures, rules, metadata = parse_xlsx(xlsx_path)
+        table_date = metadata["tableDate"]
+        versions.append({
+            "date": table_date,
+            "label": date_to_label(table_date),
+            "sourceFile": xlsx_path.name,
+            "totalProcedures": metadata["totalProcedures"],
+            "procedures": procedures,
+            "rules": rules,
+            "metadata": metadata,
+        })
+
+    # Sort versions newest-first
+    versions.sort(key=lambda v: v["date"], reverse=True)
+    latest = versions[0]
+
+    # Write latest to data/ (backwards compat for validate.py, check_invoice.py)
+    write_version_data(DATA_DIR, latest["procedures"], latest["rules"], latest["metadata"])
+
+    # Write each version to public/data/{date}/
+    for v in versions:
+        version_dir = PUBLIC_DATA_DIR / v["date"]
+        write_version_data(version_dir, v["procedures"], v["rules"], v["metadata"])
+        print(f"  Written: public/data/{v['date']}/")
+
+    # Write versions.json index
+    PUBLIC_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    versions_index = {
+        "latest": latest["date"],
+        "versions": [
+            {
+                "date": v["date"],
+                "label": v["label"],
+                "sourceFile": v["sourceFile"],
+                "totalProcedures": v["totalProcedures"],
+            }
+            for v in versions
+        ],
+    }
+    with open(PUBLIC_DATA_DIR / "versions.json", "w", encoding="utf-8") as f:
+        json.dump(versions_index, f, ensure_ascii=False, indent=2)
+
+    print(f"\nDone! {len(versions)} version(s) processed.")
+    for v in versions:
+        print(f"  {v['label']}: {v['totalProcedures']} procedures")
+    print(f"Latest: {latest['date']}")
+    print(f"Output: {DATA_DIR}/ + {PUBLIC_DATA_DIR}/")
 
 
 if __name__ == "__main__":

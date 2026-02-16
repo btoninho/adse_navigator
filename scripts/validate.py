@@ -41,6 +41,15 @@ def parse_numeric(val):
 
 
 def find_xlsx_file():
+    # Use metadata.json to find the source file that matches data/*.json
+    meta_path = DATA_DIR / "metadata.json"
+    if meta_path.exists():
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+        source = REPO_ROOT / meta.get("sourceFile", "")
+        if source.exists():
+            return source
+    # Fallback: first xlsx found
     files = list(REPO_ROOT.glob("*.xlsx"))
     if not files:
         print("ERROR: No .xlsx file found in repo root.", file=sys.stderr)

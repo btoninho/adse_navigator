@@ -8,10 +8,10 @@ Mobile-friendly web app to browse ADSE Regime Convencionado pricing tables.
 # Install dependencies
 npm install
 
-# Parse Excel → JSON (run after updating .xlsx file)
+# Parse all Excel files → versioned JSON
 python3 scripts/parse_excel.py
 
-# Validate JSON against Excel source
+# Validate latest JSON against its Excel source
 python3 scripts/validate.py
 
 # Check an invoice PDF against the pricing table
@@ -34,19 +34,39 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 
 ## Architecture
 
-- **Data pipeline**: `scripts/parse_excel.py` converts the `.xlsx` into `data/*.json` at build time
-- **Validation**: `scripts/validate.py` cross-checks every JSON row against the Excel source
+- **Data pipeline**: `scripts/parse_excel.py` processes **all** `.xlsx` files in the repo root and outputs:
+  - `data/*.json` — latest version only (backwards compat for `validate.py` and `check_invoice.py`)
+  - `public/data/{date}/` — per-version `procedures.json`, `rules.json`, `metadata.json`
+  - `public/data/versions.json` — index of all available versions with dates and labels
+- **Version context**: `src/lib/TableVersionContext.tsx` — React context that loads version data from `public/data/` at runtime, with a `Map`-based cache to avoid re-fetching. Provides `useTableVersion()` hook for all data consumers.
+- **App shell**: `src/app/components/AppShell.tsx` — client component wrapping `TableVersionProvider` + header (with version `<select>` dropdown) + footer. `layout.tsx` stays as a server component for metadata generation.
+- **Validation**: `scripts/validate.py` cross-checks `data/*.json` against its source Excel file (auto-detected from `data/metadata.json`)
 - **Frontend**: Next.js App Router with static export (`output: 'export'`)
-- **Invoice checker**: Client-side PDF parsing via `pdfjs-dist`, with pluggable provider parsers (`src/lib/invoice-parser.ts`). Python CLI (`scripts/check_invoice.py`) provides the same functionality with `pdfplumber`. Both support CUF and Lusíadas invoices with auto-detection.
+- **Invoice checker**: Client-side PDF parsing via `pdfjs-dist`, with pluggable provider parsers (`src/lib/invoice-parser.ts`). Auto-detects the correct pricing table version from invoice dates. Python CLI (`scripts/check_invoice.py`) provides the same functionality with `pdfplumber`. Both support CUF and Lusíadas invoices with auto-detection.
 - **Search**: fuse.js for client-side fuzzy search (codes + designations)
 - **Styling**: Tailwind CSS v4, mobile-first responsive design
 
+## Multi-version pricing tables
+
+The app supports multiple pricing table versions (currently Jun 2024, Jul 2025, Feb 2026). All `.xlsx` files in the repo root are processed by `parse_excel.py`.
+
+- **Version selector**: dropdown in the header switches the active table globally
+- **Invoice auto-detection**: when checking an invoice, the earliest item date determines which table was in effect (`latest versionDate ≤ invoiceDate`), and the app switches automatically with a visible banner
+- **Caching**: loaded versions are cached in a `Map` — switching back to a previously viewed version is instant
+
+### Data flow
+
+1. `parse_excel.py` reads all `.xlsx` files → writes `public/data/{date}/` + `public/data/versions.json`
+2. On page load, `TableVersionProvider` fetches `versions.json` then loads the latest version's data
+3. `setVersion(date)` fetches a different version's JSON (or returns cached data)
+4. All pages (`page.tsx`, `CategoryPageDynamic.tsx`, `InvoiceChecker.tsx`) consume data via `useTableVersion()`
+
 ## Updating the pricing table
 
-1. Place the new `.xlsx` file in the repo root
+1. Place the new `.xlsx` file in the repo root (keep previous files for multi-version support)
 2. Run `python3 scripts/parse_excel.py`
 3. Run `python3 scripts/validate.py`
-4. Commit and push — Vercel deploys automatically
+4. Commit `data/`, `public/data/`, and push — Vercel deploys automatically
 
 ## Adding a new invoice provider
 
@@ -68,15 +88,21 @@ To add a new provider (e.g., Luz Saúde):
 
 ## Key files
 
-- `scripts/parse_excel.py` — Excel parser
-- `scripts/validate.py` — JSON vs Excel cross-check
+- `scripts/parse_excel.py` — Excel parser (processes all xlsx files, outputs versioned data)
+- `scripts/validate.py` — JSON vs Excel cross-check (auto-detects source from `metadata.json`)
 - `scripts/check_invoice.py` — PDF invoice checker, Python CLI (requires `pdfplumber`)
 - `scripts/test_browser_parser.ts` — CI test for the browser-side invoice parser (run with `npx tsx`)
-- `data/procedures.json` — All procedures (~3,400 rows)
-- `data/rules.json` — Category-specific rules
-- `data/metadata.json` — Version info, category counts
+- `public/data/versions.json` — Index of all available pricing table versions
+- `public/data/{date}/` — Per-version procedures, rules, and metadata JSON
+- `data/procedures.json` — Latest version procedures (~3,400 rows, backwards compat)
+- `data/rules.json` — Latest version category-specific rules
+- `data/metadata.json` — Latest version info, category counts
+- `src/lib/TableVersionContext.tsx` — React context for version state, data fetching, and caching
 - `src/lib/invoice-parser.ts` — Shared invoice parsing logic (provider registry, CUF + Lusíadas parsers, line reconstruction)
-- `src/app/page.tsx` — Home page (search + category grid)
-- `src/app/category/[slug]/page.tsx` — Category detail page
+- `src/app/layout.tsx` — Root layout (server component, static metadata)
+- `src/app/components/AppShell.tsx` — Client wrapper with `TableVersionProvider`, header with version selector, footer
+- `src/app/page.tsx` — Home page (search + category grid, uses context)
+- `src/app/category/[slug]/page.tsx` — Category SSG wrapper with `generateStaticParams`
+- `src/app/category/[slug]/CategoryPageDynamic.tsx` — Category detail client component (uses context)
 - `src/app/verificar-fatura/page.tsx` — Invoice checker page
-- `src/app/components/InvoiceChecker.tsx` — Invoice checker UI (imports parser from `src/lib/invoice-parser.ts`)
+- `src/app/components/InvoiceChecker.tsx` — Invoice checker UI (uses context, auto-detects version from invoice dates)

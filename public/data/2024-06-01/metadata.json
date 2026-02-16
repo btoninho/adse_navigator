@@ -1,8 +1,8 @@
 {
-  "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_fevereiro_2026_v5.xlsx",
-  "tableDate": "2026-02-01",
-  "parsedAt": "2026-02-16T18:28:17.047731+00:00",
-  "totalProcedures": 3424,
+  "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_junho_2024_v01-11-24.xlsx",
+  "tableDate": "2024-06-01",
+  "parsedAt": "2026-02-16T18:28:18.050337+00:00",
+  "totalProcedures": 3240,
   "categories": [
     {
       "name": "ANÁLISES CLÍNICAS",
@@ -17,12 +17,12 @@
     {
       "name": "CIRURGIA",
       "slug": "cirurgia",
-      "count": 1746
+      "count": 1661
     },
     {
       "name": "CONSULTAS MÉDICAS",
       "slug": "consultas-medicas",
-      "count": 79
+      "count": 78
     },
     {
       "name": "ENFERMAGEM",
@@ -42,7 +42,7 @@
     {
       "name": "MEDICINA",
       "slug": "medicina",
-      "count": 410
+      "count": 408
     },
     {
       "name": "MEDICINA DENTÁRIA",
@@ -67,7 +67,7 @@
     {
       "name": "RADIOLOGIA",
       "slug": "radiologia",
-      "count": 349
+      "count": 253
     },
     {
       "name": "RADIONCOLOGIA E QUIMIOTERAPIA",

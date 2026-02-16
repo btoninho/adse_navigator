@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import procedures from "../../../data/procedures.json";
+import { useState, useCallback, useRef, useMemo } from "react";
+import {
+  useTableVersion,
+  type Procedure,
+  type VersionInfo,
+} from "../../lib/TableVersionContext";
 import {
   type InvoiceItem,
   type Provider,
@@ -23,25 +27,15 @@ interface CheckedItem extends InvoiceItem {
   category?: string;
 }
 
-interface Procedure {
-  code: string;
-  designation: string;
-  category: string;
-  categorySlug: string;
-  adseCharge: number;
-  copayment: number;
-  [key: string]: unknown;
-}
-
 // ---------------------------------------------------------------------------
 // Price comparison logic
 // ---------------------------------------------------------------------------
 
 const VARIABLE_PRICE_CODES = new Set(["6631"]);
 
-function buildProcLookup(): Map<string, Procedure[]> {
+function buildProcLookup(procedures: Procedure[]): Map<string, Procedure[]> {
   const map = new Map<string, Procedure[]>();
-  for (const p of procedures as Procedure[]) {
+  for (const p of procedures) {
     const existing = map.get(p.code) || [];
     existing.push(p);
     map.set(p.code, existing);
@@ -49,9 +43,10 @@ function buildProcLookup(): Map<string, Procedure[]> {
   return map;
 }
 
-const procByCode = buildProcLookup();
-
-function checkItems(items: InvoiceItem[]): CheckedItem[] {
+function checkItems(
+  items: InvoiceItem[],
+  procByCode: Map<string, Procedure[]>,
+): CheckedItem[] {
   return items.map((item) => {
     const codeStripped = String(parseInt(item.code, 10));
     const matches = procByCode.get(codeStripped);
@@ -102,6 +97,32 @@ function checkItems(items: InvoiceItem[]): CheckedItem[] {
       category: best.category,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Date helpers for auto-detection
+// ---------------------------------------------------------------------------
+
+/** Parse dd/mm/yyyy to YYYY-MM-DD */
+function parseInvoiceDate(dateStr: string): string | null {
+  const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** Find the table version in effect for a given date (latest version ≤ date) */
+function findVersionForDate(
+  invoiceDate: string,
+  versions: VersionInfo[],
+): string | null {
+  // versions are sorted newest-first
+  for (const v of versions) {
+    if (v.date <= invoiceDate) {
+      return v.date;
+    }
+  }
+  // If invoice date is before all versions, use the oldest
+  return versions.length > 0 ? versions[versions.length - 1].date : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,63 +179,116 @@ type State =
       provider: string | null;
       items: CheckedItem[];
       fileName: string;
+      autoSwitchedLabel?: string;
     };
 
 export default function InvoiceChecker() {
+  const { procedures, versions, currentVersion, setVersion, loading } =
+    useTableVersion();
   const [state, setState] = useState<State>({ phase: "idle" });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const processFile = useCallback(async (file: File) => {
-    if (file.type !== "application/pdf") {
-      setState({ phase: "error", message: "Por favor selecione um ficheiro PDF." });
-      return;
-    }
+  const procByCode = useMemo(() => buildProcLookup(procedures), [procedures]);
 
-    setState({ phase: "loading" });
+  const processFile = useCallback(
+    async (file: File) => {
+      if (file.type !== "application/pdf") {
+        setState({
+          phase: "error",
+          message: "Por favor selecione um ficheiro PDF.",
+        });
+        return;
+      }
 
-    try {
-      const text = await extractTextFromPDF(file);
+      setState({ phase: "loading" });
 
-      // Detect provider
-      const provider = detectProvider(text);
+      try {
+        const text = await extractTextFromPDF(file);
 
-      if (!provider) {
+        // Detect provider
+        const provider = detectProvider(text);
+
+        if (!provider) {
+          setState({
+            phase: "error",
+            message:
+              "Formato de fatura não reconhecido. Prestadores suportados: " +
+              PROVIDERS.map((p: Provider) => p.label).join(", ") +
+              ".",
+          });
+          return;
+        }
+
+        const rawItems = provider.parse(text);
+
+        if (rawItems.length === 0) {
+          setState({
+            phase: "error",
+            message: `Fatura ${provider.label} detetada, mas não foi possível extrair itens. O formato da fatura pode ter sido alterado.`,
+          });
+          return;
+        }
+
+        // Auto-detect table version from invoice dates
+        let autoSwitchedLabel: string | undefined;
+        const isoDates = rawItems
+          .map((item) => parseInvoiceDate(item.date))
+          .filter((d): d is string => d !== null);
+
+        if (isoDates.length > 0) {
+          const earliestDate = isoDates.sort()[0];
+          const targetVersion = findVersionForDate(earliestDate, versions);
+
+          if (targetVersion && targetVersion !== currentVersion) {
+            const versionInfo = versions.find(
+              (v) => v.date === targetVersion,
+            );
+            if (versionInfo) {
+              autoSwitchedLabel = versionInfo.label;
+              // Switch version and wait for data to load
+              await setVersion(targetVersion);
+              // After setVersion, procByCode will update via useMemo
+              // But we need the new procedures - return early and let effect re-process
+              // Actually, we need to fetch and check with the new data
+              // The simplest approach: fetch the data directly for checking
+              const [newProcedures] = await Promise.all([
+                fetch(`/data/${targetVersion}/procedures.json`).then((r) =>
+                  r.json(),
+                ),
+              ]);
+              const newProcByCode = buildProcLookup(newProcedures);
+              const checkedItems = checkItems(rawItems, newProcByCode);
+              setState({
+                phase: "results",
+                provider: provider.label,
+                items: checkedItems,
+                fileName: file.name,
+                autoSwitchedLabel,
+              });
+              return;
+            }
+          }
+        }
+
+        const checkedItems = checkItems(rawItems, procByCode);
+        setState({
+          phase: "results",
+          provider: provider.label,
+          items: checkedItems,
+          fileName: file.name,
+        });
+      } catch (err) {
+        console.error("PDF processing error:", err);
         setState({
           phase: "error",
           message:
-            "Formato de fatura não reconhecido. Prestadores suportados: " +
-            PROVIDERS.map((p: Provider) => p.label).join(", ") +
-            ".",
+            "Erro ao processar o PDF. Verifique que o ficheiro não está corrompido.",
         });
-        return;
       }
-
-      const rawItems = provider.parse(text);
-
-      if (rawItems.length === 0) {
-        setState({
-          phase: "error",
-          message: `Fatura ${provider.label} detetada, mas não foi possível extrair itens. O formato da fatura pode ter sido alterado.`,
-        });
-        return;
-      }
-
-      const checkedItems = checkItems(rawItems);
-      setState({
-        phase: "results",
-        provider: provider.label,
-        items: checkedItems,
-        fileName: file.name,
-      });
-    } catch (err) {
-      console.error("PDF processing error:", err);
-      setState({
-        phase: "error",
-        message: "Erro ao processar o PDF. Verifique que o ficheiro não está corrompido.",
-      });
-    }
-  }, []);
+    },
+    [procByCode, versions, currentVersion, setVersion],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -327,7 +401,7 @@ export default function InvoiceChecker() {
       )}
 
       {/* Loading */}
-      {state.phase === "loading" && (
+      {(state.phase === "loading" || loading) && state.phase !== "results" && (
         <div className="text-center py-12">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-r-transparent" />
           <p className="mt-3 text-sm text-gray-500">A processar fatura…</p>
@@ -337,6 +411,17 @@ export default function InvoiceChecker() {
       {/* Results */}
       {state.phase === "results" && summary && (
         <>
+          {/* Auto-switch banner */}
+          {state.autoSwitchedLabel && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800">
+                Tabela alterada para{" "}
+                <span className="font-medium">{state.autoSwitchedLabel}</span>{" "}
+                com base na data da fatura.
+              </p>
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -386,10 +471,18 @@ export default function InvoiceChecker() {
                 <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase tracking-wide">
                   <th className="pb-2 pr-3 font-medium">Código</th>
                   <th className="pb-2 pr-3 font-medium">Designação</th>
-                  <th className="pb-2 pr-3 font-medium text-right">ADSE Faturado</th>
-                  <th className="pb-2 pr-3 font-medium text-right">ADSE Tabela</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Copag. Faturado</th>
-                  <th className="pb-2 pr-3 font-medium text-right">Copag. Tabela</th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    ADSE Faturado
+                  </th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    ADSE Tabela
+                  </th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    Copag. Faturado
+                  </th>
+                  <th className="pb-2 pr-3 font-medium text-right">
+                    Copag. Tabela
+                  </th>
                   <th className="pb-2 font-medium text-center">Estado</th>
                 </tr>
               </thead>
@@ -478,12 +571,14 @@ export default function InvoiceChecker() {
                 </div>
                 {item.status === "diff" && (
                   <div className="mt-2 text-xs text-amber-700">
-                    {item.adseDiff != null && Math.abs(item.adseDiff) >= 0.01 && (
-                      <span>ADSE: {fmtDiff(item.adseDiff)} </span>
-                    )}
-                    {item.copayDiff != null && Math.abs(item.copayDiff) >= 0.01 && (
-                      <span>Copag: {fmtDiff(item.copayDiff)}</span>
-                    )}
+                    {item.adseDiff != null &&
+                      Math.abs(item.adseDiff) >= 0.01 && (
+                        <span>ADSE: {fmtDiff(item.adseDiff)} </span>
+                      )}
+                    {item.copayDiff != null &&
+                      Math.abs(item.copayDiff) >= 0.01 && (
+                        <span>Copag: {fmtDiff(item.copayDiff)}</span>
+                      )}
                   </div>
                 )}
               </div>

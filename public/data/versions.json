@@ -1,0 +1,23 @@
+{
+  "latest": "2026-02-01",
+  "versions": [
+    {
+      "date": "2026-02-01",
+      "label": "Fevereiro 2026",
+      "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_fevereiro_2026_v5.xlsx",
+      "totalProcedures": 3424
+    },
+    {
+      "date": "2025-07-01",
+      "label": "Julho 2025",
+      "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_julho_2025_v3_Portal.xlsx",
+      "totalProcedures": 3297
+    },
+    {
+      "date": "2024-06-01",
+      "label": "Junho 2024",
+      "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_junho_2024_v01-11-24.xlsx",
+      "totalProcedures": 3240
+    }
+  ]
+}
