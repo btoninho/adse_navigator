@@ -14,6 +14,9 @@ python3 scripts/parse_excel.py
 # Validate latest JSON against its Excel source
 python3 scripts/validate.py
 
+# Validate ALL versioned data against their Excel sources
+python3 scripts/validate.py --all
+
 # Check an invoice PDF against the pricing table
 pip install pdfplumber  # one-time
 python3 scripts/check_invoice.py path/to/invoice.pdf
@@ -40,7 +43,8 @@ Hosted on Vercel. Auto-deploys on push to `main`.
   - `public/data/versions.json` — index of all available versions with dates and labels
 - **Version context**: `src/lib/TableVersionContext.tsx` — React context that loads version data from `public/data/` at runtime, with a `Map`-based cache to avoid re-fetching. Provides `useTableVersion()` hook for all data consumers.
 - **App shell**: `src/app/components/AppShell.tsx` — client component wrapping `TableVersionProvider` + header (with version `<select>` dropdown) + footer. `layout.tsx` stays as a server component for metadata generation.
-- **Validation**: `scripts/validate.py` cross-checks `data/*.json` against its source Excel file (auto-detected from `data/metadata.json`)
+- **Validation**: `scripts/validate.py` cross-checks JSON against its source Excel file (auto-detected from `data/metadata.json`). Use `--all` to validate all versioned data under `public/data/{date}/` against their respective xlsx files.
+- **Cross-check**: `scripts/cross_check_parsers.ts` runs both Python (pdfplumber) and browser (pdfjs-dist) parsers on test invoices and asserts identical results (codes, efrValues, clientValues). This catches drift between the two implementations.
 - **Frontend**: Next.js App Router with static export (`output: 'export'`)
 - **Invoice checker**: Client-side PDF parsing via `pdfjs-dist`, with pluggable provider parsers (`src/lib/invoice-parser.ts`). Auto-detects the correct pricing table version from invoice dates. Python CLI (`scripts/check_invoice.py`) provides the same functionality with `pdfplumber`. Both support CUF and Lusíadas invoices with auto-detection.
 - **Search**: fuse.js for client-side fuzzy search (codes + designations)
@@ -80,11 +84,19 @@ To add a new provider (e.g., Luz Saúde):
 2. **Python** (`scripts/check_invoice.py`):
    - Write `extract_luz_items(pdf_path)` function
    - Add the provider to `detect_provider()` and `extract_line_items()`
-3. **Tests**: Add expectations to `scripts/test_browser_parser.ts` with a test invoice PDF
+3. **Tests**: Add expectations to `scripts/test_browser_parser.ts` and `scripts/cross_check_parsers.ts` with a test invoice PDF
 
 **How `reconstructLines` works**: `pdfjs-dist` text items arrive in PDF content stream order, which is not necessarily left-to-right. The `reconstructLines` function groups items by Y position (with ±2 tolerance), then sorts each group by X position. This produces natural left-to-right reading order matching `pdfplumber` output, so both TypeScript and Python parsers use the same column order regexes.
 
 **Space-separated thousands**: Some Lusíadas invoices use spaces as thousands separators (e.g., `"3 150,00"`). The TypeScript Lusíadas parser has two regex patterns — one for space-thousands (`LUSIADAS_LINE_SPACE_RE`) and one standard (`LUSIADAS_LINE_RE`). The space-thousands pattern is tried first since it's more specific.
+
+## Test invoice fixtures
+
+- `invoice.pdf` — CUF invoice (27 items)
+- `invoice-lusiadas.pdf` — Lusíadas single consultation (1 item, code 38)
+- `invoice-lusiadas02.pdf` — Lusíadas multi-page hospital stay (116 items)
+
+These are used by `test_browser_parser.ts` and `cross_check_parsers.ts`. Both scripts skip gracefully if a PDF is not found.
 
 ## Key files
 
@@ -92,6 +104,7 @@ To add a new provider (e.g., Luz Saúde):
 - `scripts/validate.py` — JSON vs Excel cross-check (auto-detects source from `metadata.json`)
 - `scripts/check_invoice.py` — PDF invoice checker, Python CLI (requires `pdfplumber`)
 - `scripts/test_browser_parser.ts` — CI test for the browser-side invoice parser (run with `npx tsx`)
+- `scripts/cross_check_parsers.ts` — Cross-check Python vs browser parsers produce identical results (run with `npx tsx`)
 - `public/data/versions.json` — Index of all available pricing table versions
 - `public/data/{date}/` — Per-version procedures, rules, and metadata JSON
 - `data/procedures.json` — Latest version procedures (~3,400 rows, backwards compat)
