@@ -19,10 +19,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install openpyxl pdfplumber
 
-      - name: Parse Excel
-        run: python3 scripts/parse_excel.py
-
-      - name: Validate JSON against Excel
+      - name: Validate latest JSON against Excel
         run: python3 scripts/validate.py
 
       - name: Check test invoice against pricing table
