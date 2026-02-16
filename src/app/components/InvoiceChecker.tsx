@@ -70,99 +70,123 @@ function parsePtDecimal(s: string): number {
   return parseFloat(s.replace(/\./g, "").replace(",", "."));
 }
 
-// Standard line: date code description qty unitValue efrValue clientValue
-const LINE_RE =
-  /^(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/;
+// pdfjs-dist renders CUF invoices with a different column order than pdfplumber:
+//   [description] qty clientValue date totalValue code efrValue
+//
+// When descriptions span multiple lines, the data line has no description prefix:
+//   qty clientValue date totalValue code efrValue
 
-// Line with CHNM/CDM code between description and qty
-const LINE_WITH_CHNM_RE =
-  /^(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(.+?)\s+(\d{5,})\s+(\d+\.\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/;
+// Full line: description qty clientValue date totalValue code efrValue
+const FULL_LINE_RE =
+  /^(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+([\d.,]+)\s*$/;
 
-function itemFromMatch(
-  m: RegExpMatchArray,
-  hasChnm: boolean,
-): InvoiceItem {
-  if (hasChnm) {
-    return {
-      date: m[1],
-      code: m[2],
-      description: m[3].trim(),
-      qty: parseFloat(m[5]),
-      unitValue: parsePtDecimal(m[6]),
-      efrValue: parsePtDecimal(m[7]),
-      clientValue: parsePtDecimal(m[8]),
-    };
-  }
-  return {
-    date: m[1],
-    code: m[2],
-    description: m[3].trim(),
-    qty: parseFloat(m[4]),
-    unitValue: parsePtDecimal(m[5]),
-    efrValue: parsePtDecimal(m[6]),
-    clientValue: parsePtDecimal(m[7]),
-  };
-}
+// Full line with CHNM: description qty clientValue date totalValue code chnm efrValue
+const FULL_LINE_CHNM_RE =
+  /^(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+(\d{5,})\s+([\d.,]+)\s*$/;
+
+// Data-only line (description on preceding lines): qty clientValue date totalValue code efrValue
+const DATA_RE =
+  /^(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+([\d.,]+)\s*$/;
+
+// Data-only with CHNM: qty clientValue date totalValue code chnm efrValue
+const DATA_CHNM_RE =
+  /^(\d+\.\d+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+(\d+)\s+(\d{5,})\s+([\d.,]+)\s*$/;
+
+// Lines to skip (headers, footers, section separators)
+const SKIP_RE =
+  /^(Sub-Total|Total|Contagem|Hospital|Isento|Emitido|L06C|Morada|Tel\.|Sede|Capital|Fatura|Pág\.|Original|Data de|Nr\.|ATCUD|Cliente|Acto|Unitário|Qtd\.|EFR|Pagamento|O talão|CONSERVE|Convenção|Em caso|vigor|\*)/;
+
+// Invoice section headers (all-caps category names) — skip from descriptions
+const SECTION_RE =
+  /^(URGÊNCIA|SERVIÇOS|PATOLOGIA|ANÁLISES|ANATOMIA|CIRURGIA|CONSULTAS|RX |TAC|ECOGRAFIA|MEDICINA|ESTOMATOLOGIA|FARMACOS|IMUNOHEMOTERAPIA|ENDOSCOPIA|CARDIOLOGIA|DERMATOLOGIA|FISIATRIA|GASTROENTEROLOGIA|GINECOLOGIA|NEUROLOGIA|OFTALMOLOGIA|ORTOPEDIA|OTORRINOLARINGOLOGIA|PEDIATRIA|PNEUMOLOGIA|PSICOLOGIA|PSIQUIATRIA|RADIOLOGIA|UROLOGIA|SERVIÇOS ESPECIAIS|RX CONVENCIONAL)/;
 
 function parseCUF(text: string): InvoiceItem[] {
   const items: InvoiceItem[] = [];
   const lines = text.split("\n");
+  const descBuffer: string[] = [];
 
-  let i = 0;
-  while (i < lines.length) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
+    if (!line) continue;
 
-    // Try CHNM match first
-    let m = line.match(LINE_WITH_CHNM_RE);
+    // Try full line with CHNM first (drugs)
+    let m = line.match(FULL_LINE_CHNM_RE);
     if (m) {
-      items.push(itemFromMatch(m, true));
-      i++;
+      items.push({
+        date: m[4],
+        code: m[6],
+        description: m[1].trim(),
+        qty: parseFloat(m[2]),
+        unitValue: parsePtDecimal(m[5]) / parseFloat(m[2]),
+        efrValue: parsePtDecimal(m[8]),
+        clientValue: parsePtDecimal(m[3]),
+      });
+      descBuffer.length = 0;
       continue;
     }
 
-    // Try standard match
-    m = line.match(LINE_RE);
+    // Try full line (description + data on same line)
+    m = line.match(FULL_LINE_RE);
     if (m) {
-      items.push(itemFromMatch(m, false));
-      i++;
+      items.push({
+        date: m[4],
+        code: m[6],
+        description: m[1].trim(),
+        qty: parseFloat(m[2]),
+        unitValue: parsePtDecimal(m[5]) / parseFloat(m[2]),
+        efrValue: parsePtDecimal(m[7]),
+        clientValue: parsePtDecimal(m[3]),
+      });
+      descBuffer.length = 0;
       continue;
     }
 
-    // Multi-line: date+code on first line, values may be on continuation lines
-    const dateCodeMatch = line.match(/^(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(.+)/);
-    if (dateCodeMatch) {
-      let fullLine = line;
-      let j = i + 1;
-      let found = false;
-
-      while (j < lines.length) {
-        const next = lines[j].trim();
-        if (/^\d{2}\/\d{2}\/\d{4}/.test(next)) break;
-        if (/^(Sub-Total|Total|Contagem|Hospital)/.test(next)) break;
-
-        fullLine += " " + next;
-        j++;
-
-        let m2 = fullLine.match(LINE_WITH_CHNM_RE);
-        if (m2) {
-          items.push(itemFromMatch(m2, true));
-          i = j;
-          found = true;
-          break;
-        }
-        m2 = fullLine.match(LINE_RE);
-        if (m2) {
-          items.push(itemFromMatch(m2, false));
-          i = j;
-          found = true;
-          break;
-        }
-      }
-
-      if (found) continue;
+    // Try data-only with CHNM (description was on previous lines)
+    m = line.match(DATA_CHNM_RE);
+    if (m) {
+      items.push({
+        date: m[3],
+        code: m[5],
+        description: descBuffer.join(" ").trim(),
+        qty: parseFloat(m[1]),
+        unitValue: parsePtDecimal(m[4]) / parseFloat(m[1]),
+        efrValue: parsePtDecimal(m[7]),
+        clientValue: parsePtDecimal(m[2]),
+      });
+      descBuffer.length = 0;
+      continue;
     }
 
-    i++;
+    // Try data-only line
+    m = line.match(DATA_RE);
+    if (m) {
+      items.push({
+        date: m[3],
+        code: m[5],
+        description: descBuffer.join(" ").trim(),
+        qty: parseFloat(m[1]),
+        unitValue: parsePtDecimal(m[4]) / parseFloat(m[1]),
+        efrValue: parsePtDecimal(m[6]),
+        clientValue: parsePtDecimal(m[2]),
+      });
+      descBuffer.length = 0;
+      continue;
+    }
+
+    // Skip known non-description lines
+    if (SKIP_RE.test(line)) {
+      descBuffer.length = 0;
+      continue;
+    }
+
+    // Skip section headers (category names) — don't include in descriptions
+    if (SECTION_RE.test(line)) {
+      descBuffer.length = 0;
+      continue;
+    }
+
+    // Buffer as potential description line for the next data line
+    descBuffer.push(line);
   }
 
   return items;
