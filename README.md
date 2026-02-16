@@ -1,5 +1,7 @@
 # ADSE Navegador
 
+[![Validate & Build](https://github.com/btoninho/adse_navigator/actions/workflows/validate.yml/badge.svg)](https://github.com/btoninho/adse_navigator/actions/workflows/validate.yml)
+
 Mobile-friendly web app to browse, search, and filter ADSE Regime Convencionado pricing tables.
 
 Search across 3,400+ medical procedure codes, organized in 18 categories, with ADSE charges and beneficiary copayments.
