@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check an ADSE invoice PDF against the pricing table.
 
-Extracts line items from a CUF-style ADSE invoice and compares the
-charged amounts (ADSE portion + beneficiary copayment) against the
+Extracts line items from ADSE invoice PDFs (CUF or Lusíadas) and compares
+the charged amounts (ADSE portion + beneficiary copayment) against the
 official ADSE Regime Convencionado pricing table.
 
 Usage:
@@ -19,9 +19,10 @@ import pdfplumber
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
 
-# Regex to match invoice line items:
-# date  code  description...  qty  unit_value  efr_value  client_value
-# Values use Portuguese format: comma as decimal separator
+# ---------------------------------------------------------------------------
+# CUF invoice regexes (pdfplumber layout)
+# ---------------------------------------------------------------------------
+# Column order: date code description qty unitValue efrValue clientValue
 LINE_RE = re.compile(
     r"^(\d{2}/\d{2}/\d{4})\s+"       # date
     r"(\d+)\s+"                        # code
@@ -50,8 +51,25 @@ def parse_pt_decimal(s: str) -> float:
     return float(s.replace(".", "").replace(",", "."))
 
 
-def extract_line_items(pdf_path: str) -> list[dict]:
-    """Extract invoice line items from PDF text."""
+# ---------------------------------------------------------------------------
+# Provider detection
+# ---------------------------------------------------------------------------
+
+def detect_provider(text: str) -> str:
+    """Detect invoice provider from PDF text. Returns 'cuf', 'lusiadas', or 'unknown'."""
+    if re.search(r"Lus[ií]adas", text, re.IGNORECASE):
+        return "lusiadas"
+    if re.search(r"\bCUF\b", text, re.IGNORECASE):
+        return "cuf"
+    return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# CUF line-item extraction (pdfplumber layout)
+# ---------------------------------------------------------------------------
+
+def extract_cuf_items(pdf_path: str) -> list[dict]:
+    """Extract invoice line items from a CUF PDF."""
     items = []
     pdf = pdfplumber.open(pdf_path)
 
@@ -156,6 +174,160 @@ def extract_line_items(pdf_path: str) -> list[dict]:
     return items
 
 
+# ---------------------------------------------------------------------------
+# Lusíadas line-item extraction (pdfplumber layout)
+# ---------------------------------------------------------------------------
+#
+# pdfplumber renders Lusíadas invoices with columns:
+#   date code description qty unitValue totalUnitPrice copay 0,00 0,00 copay
+#
+# Key differences from CUF:
+# - efrValue is not explicit; computed as totalUnitPrice × qty - copay
+# - unitValue has 3+ decimal places (e.g., "0,26000")
+# - totalUnitPrice has exactly 2 decimal places (e.g., "1,25")
+# - The last 4 columns are: copay 0,00 0,00 copay (IVA columns always zero for ADSE)
+
+# Lusíadas single-line item:
+# date code description qty unitValue totalUnitPrice copay 0,00 0,00 copay
+LUSIADAS_LINE_RE = re.compile(
+    r"^(\d{2}/\d{2}/\d{4})\s+"       # date
+    r"(\d+)\s+"                        # code
+    r"(.+?)\s+"                        # description
+    r"(\d+,\d{2})\s+"                  # qty (e.g., "1,00")
+    r"([\d.,]+)\s+"                    # unitValue (clientUnitPrice, 3+ decimals)
+    r"([\d., ]+,\d{2})\s+"            # totalUnitPrice (may have space thousands, 2 decimals)
+    r"([\d.,]+)\s+"                    # copay
+    r"0,00\s+0,00\s+"                  # IVA columns (always zero)
+    r"([\d.,]+)\s*$"                   # copay repeated
+)
+
+# Lines to skip in Lusíadas invoices
+LUSIADAS_SKIP_RE = re.compile(
+    r"^(Fatura|Original|\d{4}-\d{2}-\d{2}$|Data de|Nr\.|P.*g\.|Dados|"
+    r"Visão|Convenção|Val\.|IVA |%|Qtd|ud\d|Isento|CLISA|\(1\)|"
+    r"Hospital Lus|www\.|Impresso|Resumo|Carla|Taxa|Contagem|Total)"
+)
+
+
+def extract_lusiadas_items(pdf_path: str) -> list[dict]:
+    """Extract invoice line items from a Lusíadas PDF."""
+    items = []
+    pdf = pdfplumber.open(pdf_path)
+
+    for page in pdf.pages:
+        text = page.extract_text()
+        if not text:
+            continue
+
+        lines = text.split("\n")
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line or LUSIADAS_SKIP_RE.match(line):
+                i += 1
+                continue
+
+            # Try single-line match
+            m = LUSIADAS_LINE_RE.match(line)
+            if m:
+                date = m.group(1)
+                code = m.group(2)
+                description = m.group(3).strip()
+                qty = parse_pt_decimal(m.group(4))
+                total_price = parse_pt_decimal(m.group(6).replace(" ", ""))
+                copay = parse_pt_decimal(m.group(7))
+                efr_value = round(total_price * qty - copay, 2)
+
+                items.append({
+                    "date": date,
+                    "code": code,
+                    "description": description,
+                    "qty": qty,
+                    "unitValue": total_price,
+                    "efrValue": efr_value,
+                    "clientValue": copay,
+                })
+                i += 1
+                continue
+
+            # Multi-line: date+code+description start, values on continuation lines
+            date_code_match = re.match(r"^(\d{2}/\d{2}/\d{4})\s+(\d+)\s+(.+)", line)
+            if date_code_match:
+                full_line = line
+                j = i + 1
+                while j < len(lines):
+                    next_line = lines[j].strip()
+                    if re.match(r"^\d{2}/\d{2}/\d{4}", next_line):
+                        break
+                    if LUSIADAS_SKIP_RE.match(next_line):
+                        break
+                    full_line += " " + next_line
+                    j += 1
+
+                    m2 = LUSIADAS_LINE_RE.match(full_line)
+                    if m2:
+                        date = m2.group(1)
+                        code = m2.group(2)
+                        description = m2.group(3).strip()
+                        qty = parse_pt_decimal(m2.group(4))
+                        total_price = parse_pt_decimal(m2.group(6).replace(" ", ""))
+                        copay = parse_pt_decimal(m2.group(7))
+                        efr_value = round(total_price * qty - copay, 2)
+
+                        items.append({
+                            "date": date,
+                            "code": code,
+                            "description": description,
+                            "qty": qty,
+                            "unitValue": total_price,
+                            "efrValue": efr_value,
+                            "clientValue": copay,
+                        })
+                        i = j
+                        break
+                else:
+                    i += 1
+                    continue
+                continue
+
+            i += 1
+
+    pdf.close()
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Unified extraction with provider auto-detection
+# ---------------------------------------------------------------------------
+
+def extract_line_items(pdf_path: str) -> tuple[str, list[dict]]:
+    """Extract invoice line items, auto-detecting the provider.
+
+    Returns (provider_name, items).
+    """
+    # Read first page to detect provider
+    pdf = pdfplumber.open(pdf_path)
+    first_page_text = ""
+    for page in pdf.pages:
+        text = page.extract_text()
+        if text:
+            first_page_text += text + "\n"
+    pdf.close()
+
+    provider = detect_provider(first_page_text)
+
+    if provider == "lusiadas":
+        return provider, extract_lusiadas_items(pdf_path)
+    elif provider == "cuf":
+        return provider, extract_cuf_items(pdf_path)
+    else:
+        # Try CUF as fallback
+        items = extract_cuf_items(pdf_path)
+        if items:
+            return "cuf", items
+        return "unknown", []
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python3 scripts/check_invoice.py <invoice.pdf>", file=sys.stderr)
@@ -179,13 +351,15 @@ def main():
         proc_by_code.setdefault(p["code"], []).append(p)
 
     # Extract invoice items
-    items = extract_line_items(pdf_path)
+    provider, items = extract_line_items(pdf_path)
 
     if not items:
         print("ERROR: No line items found in PDF.", file=sys.stderr)
         sys.exit(1)
 
+    provider_labels = {"cuf": "CUF", "lusiadas": "Lusíadas", "unknown": "Unknown"}
     print(f"Invoice: {Path(pdf_path).name}")
+    print(f"Provider: {provider_labels.get(provider, provider)}")
     print(f"Found {len(items)} line items\n")
 
     # Check each item
