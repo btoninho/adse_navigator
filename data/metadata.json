@@ -1,0 +1,98 @@
+{
+  "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_fevereiro_2026_v5.xlsx",
+  "tableDate": "2026-02-01",
+  "parsedAt": "2026-02-16T13:13:05.175861+00:00",
+  "totalProcedures": 3424,
+  "categories": [
+    {
+      "name": "ANÁLISES CLÍNICAS",
+      "slug": "analises-clinicas",
+      "count": 546
+    },
+    {
+      "name": "ANATOMIA PATOLÓGICA",
+      "slug": "anatomia-patologica",
+      "count": 14
+    },
+    {
+      "name": "CIRURGIA",
+      "slug": "cirurgia",
+      "count": 1746
+    },
+    {
+      "name": "CONSULTAS MÉDICAS",
+      "slug": "consultas-medicas",
+      "count": 79
+    },
+    {
+      "name": "ENFERMAGEM",
+      "slug": "enfermagem",
+      "count": 18
+    },
+    {
+      "name": "INTERNAMENTO",
+      "slug": "internamento",
+      "count": 10
+    },
+    {
+      "name": "MEDICAMENTOS",
+      "slug": "medicamentos",
+      "count": 5
+    },
+    {
+      "name": "MEDICINA",
+      "slug": "medicina",
+      "count": 410
+    },
+    {
+      "name": "MEDICINA DENTÁRIA",
+      "slug": "medicina-dentaria",
+      "count": 63
+    },
+    {
+      "name": "MEDICINA FÍSICA E DE REABILITAÇÃO",
+      "slug": "medicina-fisica-e-de-reabilitacao",
+      "count": 58
+    },
+    {
+      "name": "MEDICINA NUCLEAR",
+      "slug": "medicina-nuclear",
+      "count": 47
+    },
+    {
+      "name": "PRÓTESES INTRAOPERATÓRIAS",
+      "slug": "proteses-intraoperatorias",
+      "count": 3
+    },
+    {
+      "name": "RADIOLOGIA",
+      "slug": "radiologia",
+      "count": 349
+    },
+    {
+      "name": "RADIONCOLOGIA E QUIMIOTERAPIA",
+      "slug": "radioncologia-e-quimioterapia",
+      "count": 19
+    },
+    {
+      "name": "SANGUE E MATERIAL DE TRANSPLANTE",
+      "slug": "sangue-e-material-de-transplante",
+      "count": 26
+    },
+    {
+      "name": "TRANSPORTES",
+      "slug": "transportes",
+      "count": 10
+    },
+    {
+      "name": "CUIDADOS RESPIRATÓRIOS DOMICILIÁRIOS",
+      "slug": "cuidados-respiratorios-domiciliarios",
+      "count": 18
+    },
+    {
+      "name": "DIVERSOS",
+      "slug": "diversos",
+      "count": 3
+    }
+  ]
+}
