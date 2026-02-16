@@ -157,9 +157,9 @@ async function crossCheck(name: string, pdfPath: string) {
 async function main() {
   console.log("Cross-checking Python vs browser invoice parsers...");
 
-  await crossCheck("CUF", resolve(REPO_ROOT, "invoice.pdf"));
-  await crossCheck("Lusíadas", resolve(REPO_ROOT, "invoice-lusiadas.pdf"));
-  await crossCheck("Lusíadas 02", resolve(REPO_ROOT, "invoice-lusiadas02.pdf"));
+  await crossCheck("CUF", resolve(REPO_ROOT, "invoices", "invoice.pdf"));
+  await crossCheck("Lusíadas", resolve(REPO_ROOT, "invoices", "invoice-lusiadas.pdf"));
+  await crossCheck("Lusíadas 02", resolve(REPO_ROOT, "invoices", "invoice-lusiadas02.pdf"));
 
   if (failures > 0) {
     console.error(`\nFAILED: ${failures} assertion(s) failed.`);

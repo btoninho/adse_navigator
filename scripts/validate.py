@@ -51,10 +51,10 @@ def find_xlsx_file():
         source = REPO_ROOT / meta.get("sourceFile", "")
         if source.exists():
             return source
-    # Fallback: first xlsx found
-    files = list(REPO_ROOT.glob("*.xlsx"))
+    # Fallback: first xlsx found in excel/
+    files = list((REPO_ROOT / "excel").glob("*.xlsx"))
     if not files:
-        print("ERROR: No .xlsx file found in repo root.", file=sys.stderr)
+        print("ERROR: No .xlsx file found in excel/.", file=sys.stderr)
         sys.exit(1)
     return files[0]
 

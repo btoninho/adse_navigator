@@ -142,7 +142,7 @@ async function main() {
   // --- CUF ---
   await testInvoice({
     name: "CUF",
-    pdfPath: resolve(REPO_ROOT, "invoice.pdf"),
+    pdfPath: resolve(REPO_ROOT, "invoices", "invoice.pdf"),
     expectedProvider: "cuf",
     expectedCount: 27,
     expectedCodes: [
@@ -162,7 +162,7 @@ async function main() {
   // --- Lusíadas (single consultation) ---
   await testInvoice({
     name: "Lusíadas",
-    pdfPath: resolve(REPO_ROOT, "invoice-lusiadas.pdf"),
+    pdfPath: resolve(REPO_ROOT, "invoices", "invoice-lusiadas.pdf"),
     expectedProvider: "lusiadas",
     expectedCount: 1,
     expectedCodes: ["38"],
@@ -174,7 +174,7 @@ async function main() {
   // --- Lusíadas 02 (multi-page hospital stay) ---
   await testInvoice({
     name: "Lusíadas 02",
-    pdfPath: resolve(REPO_ROOT, "invoice-lusiadas02.pdf"),
+    pdfPath: resolve(REPO_ROOT, "invoices", "invoice-lusiadas02.pdf"),
     expectedProvider: "lusiadas",
     expectedCount: 116,
     expectedCodes: [

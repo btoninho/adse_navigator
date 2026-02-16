@@ -44,8 +44,8 @@ The site is hosted on [Vercel](https://vercel.com) and auto-deploys on every pus
 
 When ADSE publishes a new pricing table:
 
-1. Place the new `.xlsx` file in the repo root (keep previous files for multi-version support)
-2. Run `python3 scripts/parse_excel.py` — processes **all** `.xlsx` files and generates versioned data
+1. Place the new `.xlsx` file in `excel/` (keep previous files for multi-version support)
+2. Run `python3 scripts/parse_excel.py` — processes **all** `.xlsx` files from `excel/` and generates versioned data
 3. Run `python3 scripts/validate.py` to verify data integrity of the latest version
 4. Commit and push — Vercel deploys automatically
 
@@ -76,7 +76,7 @@ The browser-based invoice checker (at `/verificar-fatura`) additionally auto-det
 
 ## Architecture
 
-- **Data pipeline**: `scripts/parse_excel.py` converts all `.xlsx` files into versioned JSON under `public/data/{date}/`, plus `data/*.json` (latest only) for backwards compatibility
+- **Data pipeline**: `scripts/parse_excel.py` converts all `.xlsx` files from `excel/` into versioned JSON under `public/data/{date}/`, plus `data/*.json` (latest only) for backwards compatibility
 - **Version index**: `public/data/versions.json` lists all available table versions with dates and labels
 - **Version context**: `src/lib/TableVersionContext.tsx` provides a React context for the current version, with client-side fetching and caching of version data
 - **Validation**: `scripts/validate.py` cross-checks `data/*.json` against its source Excel file (auto-detected from `metadata.json`)
@@ -87,6 +87,8 @@ The browser-based invoice checker (at `/verificar-fatura`) additionally auto-det
 ## Project Structure
 
 ```
+├── excel/                   # Source Excel pricing tables
+├── invoices/                # Test invoice PDFs
 ├── scripts/
 │   ├── parse_excel.py       # Excel → JSON parser (all versions)
 │   ├── validate.py          # JSON vs Excel cross-check

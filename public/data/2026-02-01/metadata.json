@@ -1,7 +1,7 @@
 {
-  "sourceFile": "Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_fevereiro_2026_v5.xlsx",
+  "sourceFile": "excel/Tabela-de-Precos-e-Regras-de-Regime-Convencionado_01_fevereiro_2026_v5.xlsx",
   "tableDate": "2026-02-01",
-  "parsedAt": "2026-02-16T18:28:17.047731+00:00",
+  "parsedAt": "2026-02-16T20:07:32.065925+00:00",
   "totalProcedures": 3424,
   "categories": [
     {

@@ -78,10 +78,10 @@ def date_to_label(date_str: str) -> str:
 
 
 def find_all_xlsx_files() -> list[Path]:
-    """Find all xlsx files in the repo root, sorted by extracted date."""
-    files = list(REPO_ROOT.glob("*.xlsx"))
+    """Find all xlsx files in the excel/ directory, sorted by extracted date."""
+    files = list((REPO_ROOT / "excel").glob("*.xlsx"))
     if not files:
-        print("ERROR: No .xlsx file found in repo root.", file=sys.stderr)
+        print("ERROR: No .xlsx file found in excel/.", file=sys.stderr)
         sys.exit(1)
     # Sort by extracted date (newest first)
     files.sort(key=lambda f: extract_date_from_filename(f.name), reverse=True)
@@ -384,7 +384,7 @@ def parse_xlsx(xlsx_path: Path):
         category_counts[key] = category_counts.get(key, 0) + 1
 
     metadata = {
-        "sourceFile": xlsx_path.name,
+        "sourceFile": f"excel/{xlsx_path.name}",
         "tableDate": table_date,
         "parsedAt": datetime.now(timezone.utc).isoformat(),
         "totalProcedures": len(all_procedures),
@@ -435,7 +435,7 @@ def main():
         versions.append({
             "date": table_date,
             "label": date_to_label(table_date),
-            "sourceFile": xlsx_path.name,
+            "sourceFile": metadata["sourceFile"],
             "totalProcedures": metadata["totalProcedures"],
             "procedures": procedures,
             "rules": rules,

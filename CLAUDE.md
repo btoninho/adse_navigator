@@ -37,7 +37,7 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 
 ## Architecture
 
-- **Data pipeline**: `scripts/parse_excel.py` processes **all** `.xlsx` files in the repo root and outputs:
+- **Data pipeline**: `scripts/parse_excel.py` processes **all** `.xlsx` files in `excel/` and outputs:
   - `data/*.json` — latest version only (backwards compat for `validate.py` and `check_invoice.py`)
   - `public/data/{date}/` — per-version `procedures.json`, `rules.json`, `metadata.json`
   - `public/data/versions.json` — index of all available versions with dates and labels
@@ -52,7 +52,7 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 
 ## Multi-version pricing tables
 
-The app supports multiple pricing table versions (currently Jun 2024, Jul 2025, Feb 2026). All `.xlsx` files in the repo root are processed by `parse_excel.py`.
+The app supports multiple pricing table versions (currently Jun 2024, Jul 2025, Feb 2026). All `.xlsx` files in `excel/` are processed by `parse_excel.py`.
 
 - **Version selector**: dropdown in the header switches the active table globally
 - **Invoice auto-detection**: when checking an invoice, the earliest item date determines which table was in effect (`latest versionDate ≤ invoiceDate`), and the app switches automatically with a visible banner
@@ -60,14 +60,14 @@ The app supports multiple pricing table versions (currently Jun 2024, Jul 2025, 
 
 ### Data flow
 
-1. `parse_excel.py` reads all `.xlsx` files → writes `public/data/{date}/` + `public/data/versions.json`
+1. `parse_excel.py` reads all `.xlsx` files from `excel/` → writes `public/data/{date}/` + `public/data/versions.json`
 2. On page load, `TableVersionProvider` fetches `versions.json` then loads the latest version's data
 3. `setVersion(date)` fetches a different version's JSON (or returns cached data)
 4. All pages (`page.tsx`, `CategoryPageDynamic.tsx`, `InvoiceChecker.tsx`) consume data via `useTableVersion()`
 
 ## Updating the pricing table
 
-1. Place the new `.xlsx` file in the repo root (keep previous files for multi-version support)
+1. Place the new `.xlsx` file in `excel/` (keep previous files for multi-version support)
 2. Run `python3 scripts/parse_excel.py`
 3. Run `python3 scripts/validate.py`
 4. Commit `data/`, `public/data/`, and push — Vercel deploys automatically
@@ -92,9 +92,9 @@ To add a new provider (e.g., Luz Saúde):
 
 ## Test invoice fixtures
 
-- `invoice.pdf` — CUF invoice (27 items)
-- `invoice-lusiadas.pdf` — Lusíadas single consultation (1 item, code 38)
-- `invoice-lusiadas02.pdf` — Lusíadas multi-page hospital stay (116 items)
+- `invoices/invoice.pdf` — CUF invoice (27 items)
+- `invoices/invoice-lusiadas.pdf` — Lusíadas single consultation (1 item, code 38)
+- `invoices/invoice-lusiadas02.pdf` — Lusíadas multi-page hospital stay (116 items)
 
 These are used by `test_browser_parser.ts` and `cross_check_parsers.ts`. Both scripts skip gracefully if a PDF is not found.
 
