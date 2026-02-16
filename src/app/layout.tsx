@@ -38,9 +38,17 @@ export default function RootLayout({
             <a href="/" className="font-bold text-lg text-blue-700">
               ADSE Navegador
             </a>
-            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-              Tabela {metadata.tableDate}
-            </span>
+            <div className="flex items-center gap-3">
+              <a
+                href="/verificar-fatura"
+                className="text-xs font-medium text-blue-600 hover:text-blue-800"
+              >
+                Verificar Fatura
+              </a>
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                Tabela {metadata.tableDate}
+              </span>
+            </div>
           </div>
         </header>
         <main className="flex-1 max-w-5xl mx-auto px-4 py-6 w-full">

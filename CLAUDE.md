@@ -47,6 +47,25 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 3. Run `python3 scripts/validate.py`
 4. Commit and push — Vercel deploys automatically
 
+## Adding a new invoice provider
+
+The invoice checker (`src/app/components/InvoiceChecker.tsx`) uses a pluggable provider registry. Each provider defines how to detect and parse its invoice format. Currently only CUF is supported.
+
+To add a new provider (e.g., Luz Saúde):
+
+1. Write a parser function that takes the full PDF text and returns `InvoiceItem[]`:
+   ```ts
+   function parseLuz(text: string): InvoiceItem[] { /* ... */ }
+   ```
+2. Add an entry to the `PROVIDERS` array in `InvoiceChecker.tsx`:
+   ```ts
+   { id: "luz", label: "Luz Saúde", detect: (text) => /Luz Saúde/i.test(text), parse: parseLuz }
+   ```
+   - `detect` — returns `true` if the PDF text belongs to this provider (match on known strings like the provider name)
+   - `parse` — extracts line items using regex patterns specific to that provider's invoice layout
+
+The app auto-detects the provider by running each `detect` function against the PDF text. If no provider matches, it shows "Formato de fatura não reconhecido".
+
 ## Key files
 
 - `scripts/parse_excel.py` — Excel parser
@@ -57,3 +76,5 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 - `data/metadata.json` — Version info, category counts
 - `src/app/page.tsx` — Home page (search + category grid)
 - `src/app/category/[slug]/page.tsx` — Category detail page
+- `src/app/verificar-fatura/page.tsx` — Invoice checker page
+- `src/app/components/InvoiceChecker.tsx` — Invoice parsing, comparison & UI (provider registry lives here)

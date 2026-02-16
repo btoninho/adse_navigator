@@ -17,13 +17,16 @@ jobs:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: pip install openpyxl
+        run: pip install openpyxl pdfplumber
 
       - name: Parse Excel
         run: python3 scripts/parse_excel.py
 
       - name: Validate JSON against Excel
         run: python3 scripts/validate.py
+
+      - name: Check test invoice against pricing table
+        run: python3 scripts/check_invoice.py invoice.pdf
 
       - uses: actions/setup-node@v4
         with:
