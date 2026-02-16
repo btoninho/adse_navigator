@@ -32,9 +32,14 @@ export const PROVIDERS: Provider[] = [
     detect: (text) => /\bCUF\b/i.test(text),
     parse: parseCUF,
   },
+  {
+    id: "lusiadas",
+    label: "Lusíadas",
+    detect: (text) => /Lus[ií]adas/i.test(text),
+    parse: parseLusiadas,
+  },
   // Future providers go here:
   // { id: "luz", label: "Luz Saúde", detect: ..., parse: parseLuz },
-  // { id: "lusiadas", label: "Lusíadas", detect: ..., parse: parseLusiadas },
 ];
 
 /** Detect which provider issued the invoice, or null if unknown. */
@@ -168,6 +173,118 @@ export function parseCUF(text: string): InvoiceItem[] {
 
     // Buffer as potential description line for the next data line
     descBuffer.push(line);
+  }
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
+// Lusíadas invoice parser
+// ---------------------------------------------------------------------------
+//
+// pdfjs-dist renders Lusíadas invoices with columns in this order:
+//   copay 0,00 0,00 copay totalUnitPrice clientUnitPrice qty [description] code date
+//
+// Key differences from CUF:
+// - efrValue is not explicit; computed as totalUnitPrice × qty - copay
+// - totalUnitPrice may use spaces as thousands separator ("3 150,00")
+// - clientUnitPrice has 3+ decimal places ("0,26000") vs copay's 2 ("0,26")
+// - IVA is always "0,00" for ADSE convention invoices
+
+// Numeric prefix: copay 0,00 0,00 copay totalUnitPrice(2 decimals) clientUnitPrice(3+ decimals) qty
+// The totalUnitPrice may have space-separated thousands (e.g., "3 150,00")
+const LUSIADAS_PREFIX_RE =
+  /^([\d.,]+)\s+0,00\s+0,00\s+[\d.,]+\s+([\d ]+,\d{2})\s+(\d+,\d{3,})\s+(\d+,\d{2})\s+(.+)/;
+
+// Code + date at end of a line
+const LUSIADAS_SUFFIX_RE = /(\d{3,})\s+(\d{2}\/\d{2}\/\d{4})\s*$/;
+
+// Lines to skip in Lusíadas invoices
+const LUSIADAS_SKIP_RE =
+  /^(Fatura|Original|\d{4}-\d{2}-\d{2}$|Data de|Nr\.|P.*g\.|Dados|Visão|Convenção|Val\.|IVA |%|Qtd|ud\d|Isento|CLISA|\(1\)|Hospital Lus|www\.|Impresso|Resumo|Carla|Taxa)/;
+
+export function parseLusiadas(text: string): InvoiceItem[] {
+  const items: InvoiceItem[] = [];
+  const lines = text.split("\n");
+
+  let pending: {
+    copay: number;
+    totalPrice: number;
+    qty: number;
+    descStart: string;
+  } | null = null;
+  const descBuffer: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (LUSIADAS_SKIP_RE.test(line)) continue;
+    if (/Contagem e valor/.test(line) || /Total \(€\)/.test(line)) {
+      pending = null;
+      descBuffer.length = 0;
+      continue;
+    }
+
+    // Try matching as a data line (starts with numeric prefix)
+    const prefixMatch = line.match(LUSIADAS_PREFIX_RE);
+    if (prefixMatch) {
+      const copay = parsePtDecimal(prefixMatch[1]);
+      const totalPrice = parsePtDecimal(prefixMatch[2].replace(/ /g, ""));
+      const qty = parsePtDecimal(prefixMatch[4]);
+      const rest = prefixMatch[5];
+
+      // Check if the rest has code + date (complete single-line item)
+      const suffixMatch = rest.match(LUSIADAS_SUFFIX_RE);
+      if (suffixMatch) {
+        const description = rest.substring(0, suffixMatch.index!).trim();
+        items.push({
+          date: suffixMatch[2],
+          code: suffixMatch[1],
+          description,
+          qty,
+          unitValue: totalPrice,
+          efrValue: Math.round((totalPrice * qty - copay) * 100) / 100,
+          clientValue: copay,
+        });
+        pending = null;
+        descBuffer.length = 0;
+      } else {
+        // Multi-line: description continues on next lines
+        pending = { copay, totalPrice, qty, descStart: rest };
+        descBuffer.length = 0;
+      }
+      continue;
+    }
+
+    // Continuation line for a pending multi-line item
+    if (pending) {
+      const suffixMatch = line.match(LUSIADAS_SUFFIX_RE);
+      if (suffixMatch) {
+        const descEnd = line.substring(0, suffixMatch.index!).trim();
+        const fullDesc = [pending.descStart, ...descBuffer, descEnd]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        items.push({
+          date: suffixMatch[2],
+          code: suffixMatch[1],
+          description: fullDesc,
+          qty: pending.qty,
+          unitValue: pending.totalPrice,
+          efrValue:
+            Math.round((pending.totalPrice * pending.qty - pending.copay) * 100) / 100,
+          clientValue: pending.copay,
+        });
+        pending = null;
+        descBuffer.length = 0;
+      } else {
+        descBuffer.push(line);
+      }
+      continue;
+    }
+
+    // Unknown line (section header, etc.) — ignore
   }
 
   return items;
