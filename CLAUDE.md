@@ -37,7 +37,7 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 - **Data pipeline**: `scripts/parse_excel.py` converts the `.xlsx` into `data/*.json` at build time
 - **Validation**: `scripts/validate.py` cross-checks every JSON row against the Excel source
 - **Frontend**: Next.js App Router with static export (`output: 'export'`)
-- **Invoice checker**: Client-side PDF parsing via `pdfjs-dist`, with pluggable provider parsers (`src/lib/invoice-parser.ts`)
+- **Invoice checker**: Client-side PDF parsing via `pdfjs-dist`, with pluggable provider parsers (`src/lib/invoice-parser.ts`). Python CLI (`scripts/check_invoice.py`) provides the same functionality with `pdfplumber`. Both support CUF and Lusíadas invoices with auto-detection.
 - **Search**: fuse.js for client-side fuzzy search (codes + designations)
 - **Styling**: Tailwind CSS v4, mobile-first responsive design
 
@@ -50,25 +50,21 @@ Hosted on Vercel. Auto-deploys on push to `main`.
 
 ## Adding a new invoice provider
 
-The invoice checker uses a pluggable provider registry in `src/lib/invoice-parser.ts`. Each provider defines how to detect and parse its invoice format. Currently only CUF is supported.
+The invoice checker uses a pluggable provider registry. Currently supports **CUF** and **Lusíadas**.
 
 To add a new provider (e.g., Luz Saúde):
 
-1. Write a parser function in `src/lib/invoice-parser.ts` that takes the full PDF text and returns `InvoiceItem[]`:
-   ```ts
-   function parseLuz(text: string): InvoiceItem[] { /* ... */ }
-   ```
-2. Add an entry to the `PROVIDERS` array in `src/lib/invoice-parser.ts`:
-   ```ts
-   { id: "luz", label: "Luz Saúde", detect: (text) => /Luz Saúde/i.test(text), parse: parseLuz }
-   ```
-   - `detect` — returns `true` if the PDF text belongs to this provider (match on known strings like the provider name)
-   - `parse` — extracts line items using regex patterns specific to that provider's invoice layout
-3. Add test expectations to `scripts/test_browser_parser.ts` if you have a test invoice
+1. **TypeScript** (`src/lib/invoice-parser.ts`):
+   - Write a parser function: `function parseLuz(text: string): InvoiceItem[] { /* ... */ }`
+   - Add to the `PROVIDERS` array: `{ id: "luz", label: "Luz Saúde", detect: (text) => /Luz Saúde/i.test(text), parse: parseLuz }`
+2. **Python** (`scripts/check_invoice.py`):
+   - Write `extract_luz_items(pdf_path)` function
+   - Add the provider to `detect_provider()` and `extract_line_items()`
+3. **Tests**: Add expectations to `scripts/test_browser_parser.ts` with a test invoice PDF
 
-The app auto-detects the provider by running each `detect` function against the PDF text. If no provider matches, it shows "Formato de fatura não reconhecido".
+**How `reconstructLines` works**: `pdfjs-dist` text items arrive in PDF content stream order, which is not necessarily left-to-right. The `reconstructLines` function groups items by Y position (with ±2 tolerance), then sorts each group by X position. This produces natural left-to-right reading order matching `pdfplumber` output, so both TypeScript and Python parsers use the same column order regexes.
 
-**Important**: `pdfjs-dist` (browser) renders text in a different column order than `pdfplumber` (Python CLI). Always inspect `pdfjs-dist` output for a new provider before writing regex patterns — don't assume the same layout as the Python parser.
+**Space-separated thousands**: Some Lusíadas invoices use spaces as thousands separators (e.g., `"3 150,00"`). The TypeScript Lusíadas parser has two regex patterns — one for space-thousands (`LUSIADAS_LINE_SPACE_RE`) and one standard (`LUSIADAS_LINE_RE`). The space-thousands pattern is tried first since it's more specific.
 
 ## Key files
 
@@ -79,7 +75,7 @@ The app auto-detects the provider by running each `detect` function against the 
 - `data/procedures.json` — All procedures (~3,400 rows)
 - `data/rules.json` — Category-specific rules
 - `data/metadata.json` — Version info, category counts
-- `src/lib/invoice-parser.ts` — Shared invoice parsing logic (provider registry, CUF parser, line reconstruction)
+- `src/lib/invoice-parser.ts` — Shared invoice parsing logic (provider registry, CUF + Lusíadas parsers, line reconstruction)
 - `src/app/page.tsx` — Home page (search + category grid)
 - `src/app/category/[slug]/page.tsx` — Category detail page
 - `src/app/verificar-fatura/page.tsx` — Invoice checker page
