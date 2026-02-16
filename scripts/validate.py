@@ -6,7 +6,8 @@ parsed JSON. Reports mismatches in codes, designations, prices, and
 missing/extra rows.
 
 Usage:
-    python3 scripts/validate.py [path/to/file.xlsx]
+    python3 scripts/validate.py [path/to/file.xlsx]   # validate data/ against xlsx
+    python3 scripts/validate.py --all                   # validate all versions
 """
 
 import json
@@ -18,6 +19,7 @@ import openpyxl
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO_ROOT / "data"
+PUBLIC_DATA_DIR = REPO_ROOT / "public" / "data"
 
 CATEGORY_RE = re.compile(r"RC_\d+ - (.+) - Tab")
 
@@ -146,17 +148,16 @@ def extract_excel_rows(wb):
     return excel_rows
 
 
-def main():
-    if len(sys.argv) > 1:
-        xlsx_path = Path(sys.argv[1]).resolve()
-    else:
-        xlsx_path = find_xlsx_file()
+def validate_version(xlsx_path: Path, data_dir: Path) -> int:
+    """Validate a single version's JSON against its Excel source.
 
+    Returns the number of issues found (0 = pass).
+    """
     print(f"Validating against: {xlsx_path.name}")
-    print(f"JSON source: {DATA_DIR / 'procedures.json'}\n")
+    print(f"JSON source: {data_dir / 'procedures.json'}\n")
 
     # Load JSON
-    with open(DATA_DIR / "procedures.json", encoding="utf-8") as f:
+    with open(data_dir / "procedures.json", encoding="utf-8") as f:
         json_procs = json.load(f)
 
     # Load Excel
@@ -352,6 +353,65 @@ def main():
     else:
         print(f"\n  ✗ VALIDATION FOUND {total_issues} ISSUE(S) — review above.")
 
+    return total_issues
+
+
+def validate_all_versions() -> int:
+    """Validate all versions from versions.json against their source xlsx files."""
+    versions_path = PUBLIC_DATA_DIR / "versions.json"
+    if not versions_path.exists():
+        print("ERROR: public/data/versions.json not found. Run parse_excel.py first.", file=sys.stderr)
+        sys.exit(1)
+
+    with open(versions_path, encoding="utf-8") as f:
+        versions_index = json.load(f)
+
+    total_issues = 0
+    results = []
+
+    for v in versions_index["versions"]:
+        date = v["date"]
+        source_file = v["sourceFile"]
+        xlsx_path = REPO_ROOT / source_file
+        version_data_dir = PUBLIC_DATA_DIR / date
+
+        print(f"\n{'#' * 60}")
+        print(f"VERSION: {v['label']} ({date})")
+        print(f"{'#' * 60}\n")
+
+        if not xlsx_path.exists():
+            print(f"  SKIP: Source file not found: {source_file}")
+            continue
+
+        if not version_data_dir.exists():
+            print(f"  SKIP: Data directory not found: public/data/{date}/")
+            continue
+
+        issues = validate_version(xlsx_path, version_data_dir)
+        total_issues += issues
+        results.append((v["label"], date, issues))
+
+    print(f"\n{'=' * 60}")
+    print("ALL VERSIONS SUMMARY")
+    print(f"{'=' * 60}")
+    for label, date, issues in results:
+        status = "✓ PASS" if issues == 0 else f"✗ {issues} issue(s)"
+        print(f"  {label} ({date}): {status}")
+
+    return total_issues
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--all":
+        total_issues = validate_all_versions()
+        sys.exit(0 if total_issues == 0 else 1)
+
+    if len(sys.argv) > 1:
+        xlsx_path = Path(sys.argv[1]).resolve()
+    else:
+        xlsx_path = find_xlsx_file()
+
+    total_issues = validate_version(xlsx_path, DATA_DIR)
     sys.exit(0 if total_issues == 0 else 1)
 
 
