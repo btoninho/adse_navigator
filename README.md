@@ -10,7 +10,7 @@ Search across 3,400+ medical procedure codes, organized in 18 categories, with A
 - **18 categories** — from Análises Clínicas to Cirurgia, Medicina Dentária, and more
 - **Category-specific rules** — expandable panel with ADSE-specific rules per category
 - **Mobile-first** — card-based layout on mobile, table view on desktop
-- **Static site** — no backend needed, deploy anywhere
+- **Static site** — no backend needed, deployed on Vercel
 
 ## Quick Start
 
@@ -28,6 +28,14 @@ npm run dev
 npm run build
 ```
 
+## Deployment
+
+The site is hosted on [Vercel](https://vercel.com) and auto-deploys on every push to `main`.
+
+- **Production URL**: https://adse-navigator.vercel.app
+- **Manual deploy**: `npx vercel --prod`
+- **Preview deploy** (without promoting to prod): `npx vercel`
+
 ## Updating the Pricing Table
 
 When ADSE publishes a new pricing table:
@@ -35,8 +43,13 @@ When ADSE publishes a new pricing table:
 1. Place the new `.xlsx` file in the repo root
 2. Run `python3 scripts/parse_excel.py`
 3. Run `python3 scripts/validate.py` to verify data integrity
-4. Run `npm run build`
-5. Deploy the `out/` folder
+4. Commit and push — Vercel deploys automatically
+
+```bash
+python3 scripts/parse_excel.py path/to/new_file.xlsx
+python3 scripts/validate.py
+git add data/ && git commit -m "Update pricing table" && git push
+```
 
 ## Architecture
 
