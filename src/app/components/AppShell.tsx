@@ -60,10 +60,13 @@ function Footer() {
 
   return (
     <footer className="border-t border-gray-200 bg-white">
-      <div className="max-w-5xl mx-auto px-4 py-3 text-center text-xs text-gray-400">
-        {metadata
-          ? `Fonte: ${metadata.sourceFile} · ${metadata.totalProcedures} procedimentos`
-          : "A carregar…"}
+      <div className="max-w-5xl mx-auto px-4 py-3 text-center text-xs text-gray-400 space-y-1">
+        <div>
+          {metadata
+            ? `Fonte: ${metadata.sourceFile} · ${metadata.totalProcedures} procedimentos`
+            : "A carregar…"}
+        </div>
+        <div>© {new Date().getFullYear()} B. Toninho</div>
       </div>
     </footer>
   );

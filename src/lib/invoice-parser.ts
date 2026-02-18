@@ -69,6 +69,10 @@ const CUF_LINE_RE =
 const CUF_LINE_CHNM_RE =
   /^(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(.+?)\s+(\d{5,})\s+(\d+\.\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$/;
 
+// When client copayment is zero it is omitted from the invoice line
+const CUF_LINE_NO_COPAY_RE =
+  /^(\d{2}\/\d{2}\/\d{4})\s+(\d+)\s+(.+?)\s+(\d+\.\d+)\s+([\d.,]+)\s+([\d.,]+)\s*$/;
+
 // Lines to skip (headers, footers, section separators)
 const CUF_SKIP_RE =
   /^(Sub-Total|Total|Contagem|Hospital|Isento|Emitido|L06C|Morada|Tel\.|Sede|Capital|Fatura|Pág\.|Original|Data de|Nr\.|ATCUD|Cliente|Acto|Unitário|Qtd\.|EFR|Pagamento|O talão|CONSERVE|Convenção|Em caso|vigor|\*)/;
@@ -108,6 +112,21 @@ export function parseCUF(text: string): InvoiceItem[] {
         unitValue: parsePtDecimal(m[5]),
         efrValue: parsePtDecimal(m[6]),
         clientValue: parsePtDecimal(m[7]),
+      });
+      continue;
+    }
+
+    // Try line where client copayment is zero (omitted from invoice)
+    m = line.match(CUF_LINE_NO_COPAY_RE);
+    if (m) {
+      items.push({
+        date: m[1],
+        code: m[2],
+        description: m[3].trim(),
+        qty: parseFloat(m[4]),
+        unitValue: parsePtDecimal(m[5]),
+        efrValue: parsePtDecimal(m[6]),
+        clientValue: 0,
       });
       continue;
     }

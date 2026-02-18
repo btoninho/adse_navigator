@@ -100,7 +100,9 @@ These are used by `test_browser_parser.ts` and `cross_check_parsers.ts`. Both sc
 
 ## Key files
 
-- `scripts/parse_excel.py` — Excel parser (processes all xlsx files, outputs versioned data)
+- `excel/` — Source Excel pricing table files (`.xlsx`)
+- `invoices/` — Test invoice PDF fixtures
+- `scripts/parse_excel.py` — Excel parser (processes all xlsx files from `excel/`, outputs versioned data)
 - `scripts/validate.py` — JSON vs Excel cross-check (auto-detects source from `metadata.json`)
 - `scripts/check_invoice.py` — PDF invoice checker, Python CLI (requires `pdfplumber`)
 - `scripts/test_browser_parser.ts` — CI test for the browser-side invoice parser (run with `npx tsx`)

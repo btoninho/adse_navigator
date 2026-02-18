@@ -45,6 +45,16 @@ LINE_WITH_CHNM_RE = re.compile(
     r"([\d.,]+)\s*$"                   # client value
 )
 
+# When the client copayment is zero it is omitted from the invoice line
+LINE_NO_COPAY_RE = re.compile(
+    r"^(\d{2}/\d{2}/\d{4})\s+"       # date
+    r"(\d+)\s+"                        # code
+    r"(.+?)\s+"                        # description
+    r"(\d+\.\d+)\s+"                   # quantity
+    r"([\d.,]+)\s+"                    # unit value
+    r"([\d.,]+)\s*$"                   # EFR (ADSE) value — client pays 0
+)
+
 
 def parse_pt_decimal(s: str) -> float:
     """Parse Portuguese decimal format (comma as separator)."""
@@ -68,6 +78,59 @@ def detect_provider(text: str) -> str:
 # CUF line-item extraction (pdfplumber layout)
 # ---------------------------------------------------------------------------
 
+def _append_cuf_item(items: list, m, *, with_chnm: bool = False, no_copay: bool = False) -> None:
+    """Append a parsed CUF item dict to items from a regex match."""
+    if with_chnm:
+        items.append({
+            "date": m.group(1),
+            "code": m.group(2),
+            "description": m.group(3).strip(),
+            "qty": float(m.group(5)),
+            "unitValue": parse_pt_decimal(m.group(6)),
+            "efrValue": parse_pt_decimal(m.group(7)),
+            "clientValue": parse_pt_decimal(m.group(8)),
+        })
+    elif no_copay:
+        items.append({
+            "date": m.group(1),
+            "code": m.group(2),
+            "description": m.group(3).strip(),
+            "qty": float(m.group(4)),
+            "unitValue": parse_pt_decimal(m.group(5)),
+            "efrValue": parse_pt_decimal(m.group(6)),
+            "clientValue": 0.0,
+        })
+    else:
+        items.append({
+            "date": m.group(1),
+            "code": m.group(2),
+            "description": m.group(3).strip(),
+            "qty": float(m.group(4)),
+            "unitValue": parse_pt_decimal(m.group(5)),
+            "efrValue": parse_pt_decimal(m.group(6)),
+            "clientValue": parse_pt_decimal(m.group(7)),
+        })
+
+
+def _try_cuf_regexes(line: str) -> tuple | None:
+    """Try all CUF single-line regexes. Returns (match, kwargs) or None."""
+    m = LINE_WITH_CHNM_RE.match(line)
+    if m:
+        return m, {"with_chnm": True}
+    m = LINE_RE.match(line)
+    if m:
+        return m, {}
+    m = LINE_NO_COPAY_RE.match(line)
+    if m:
+        return m, {"no_copay": True}
+    return None
+
+
+_CUF_STOP_RE = re.compile(
+    r"^(\d{2}/\d{2}/\d{4}|Sub-Total|Total|Contagem|Hospital)"
+)
+
+
 def extract_cuf_items(pdf_path: str) -> list[dict]:
     """Extract invoice line items from a CUF PDF."""
     items = []
@@ -83,89 +146,37 @@ def extract_cuf_items(pdf_path: str) -> list[dict]:
         while i < len(lines):
             line = lines[i].strip()
 
-            # Try matching with CHNM code first (drugs line)
-            m = LINE_WITH_CHNM_RE.match(line)
-            if m:
-                items.append({
-                    "date": m.group(1),
-                    "code": m.group(2),
-                    "description": m.group(3).strip(),
-                    "qty": float(m.group(5)),
-                    "unitValue": parse_pt_decimal(m.group(6)),
-                    "efrValue": parse_pt_decimal(m.group(7)),
-                    "clientValue": parse_pt_decimal(m.group(8)),
-                })
+            # Try all single-line patterns first
+            result = _try_cuf_regexes(line)
+            if result:
+                m, kwargs = result
+                _append_cuf_item(items, m, **kwargs)
                 i += 1
                 continue
 
-            # Try standard line match
-            m = LINE_RE.match(line)
-            if m:
-                items.append({
-                    "date": m.group(1),
-                    "code": m.group(2),
-                    "description": m.group(3).strip(),
-                    "qty": float(m.group(4)),
-                    "unitValue": parse_pt_decimal(m.group(5)),
-                    "efrValue": parse_pt_decimal(m.group(6)),
-                    "clientValue": parse_pt_decimal(m.group(7)),
-                })
-                i += 1
-                continue
-
-            # Check if this is a date+code line where values are on this line
-            # but description wraps to next lines (multi-line descriptions)
-            date_code_match = re.match(r"^(\d{2}/\d{2}/\d{4})\s+(\d+)\s+(.+)", line)
-            if date_code_match:
-                # Collect continuation lines until we find values
+            # Multi-line: description may wrap onto subsequent lines
+            if re.match(r"^(\d{2}/\d{2}/\d{4})\s+(\d+)\s+(.+)", line):
                 full_line = line
                 j = i + 1
+                matched = False
                 while j < len(lines):
                     next_line = lines[j].strip()
-                    # Stop if next line starts with a date (new item) or is a section header
-                    if re.match(r"^\d{2}/\d{2}/\d{4}", next_line):
+                    if _CUF_STOP_RE.match(next_line):
                         break
-                    if next_line.startswith("Sub-Total") or next_line.startswith("Total"):
-                        break
-                    if next_line.startswith("Contagem"):
-                        break
-                    if next_line.startswith("Hospital"):
-                        break
-                    # Check if this continuation line has the values at the end
                     full_line += " " + next_line
                     j += 1
 
-                    # Try matching the accumulated line
-                    m2 = LINE_WITH_CHNM_RE.match(full_line)
-                    if m2:
-                        items.append({
-                            "date": m2.group(1),
-                            "code": m2.group(2),
-                            "description": m2.group(3).strip(),
-                            "qty": float(m2.group(5)),
-                            "unitValue": parse_pt_decimal(m2.group(6)),
-                            "efrValue": parse_pt_decimal(m2.group(7)),
-                            "clientValue": parse_pt_decimal(m2.group(8)),
-                        })
+                    result = _try_cuf_regexes(full_line)
+                    if result:
+                        m, kwargs = result
+                        _append_cuf_item(items, m, **kwargs)
                         i = j
+                        matched = True
                         break
 
-                    m2 = LINE_RE.match(full_line)
-                    if m2:
-                        items.append({
-                            "date": m2.group(1),
-                            "code": m2.group(2),
-                            "description": m2.group(3).strip(),
-                            "qty": float(m2.group(4)),
-                            "unitValue": parse_pt_decimal(m2.group(5)),
-                            "efrValue": parse_pt_decimal(m2.group(6)),
-                            "clientValue": parse_pt_decimal(m2.group(7)),
-                        })
-                        i = j
-                        break
-                else:
+                # Whether we matched or exhausted/stopped, advance past this line
+                if not matched:
                     i += 1
-                    continue
                 continue
 
             i += 1
