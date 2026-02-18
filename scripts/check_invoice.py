@@ -459,8 +459,9 @@ def main():
     if not issues and not not_found:
         print("\n  ✓ All charges match the ADSE pricing table.")
 
-    # Exit non-zero only for genuine pricing discrepancies (not variable pricing)
-    sys.exit(1 if issues or not_found else 0)
+    # Exit non-zero only for genuine pricing discrepancies.
+    # Codes not in the table (hospital-specific, urgency surcharges) are informational only.
+    sys.exit(1 if issues else 0)
 
 
 if __name__ == "__main__":
