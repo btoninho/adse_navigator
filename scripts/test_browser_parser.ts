@@ -159,6 +159,18 @@ async function main() {
     ],
   });
 
+  // --- CUF (single item, hospital-specific code) ---
+  await testInvoice({
+    name: "CUF 02",
+    pdfPath: resolve(REPO_ROOT, "invoices", "invoice_cuf.pdf"),
+    expectedProvider: "cuf",
+    expectedCount: 1,
+    expectedCodes: ["2000064"],
+    spotChecks: [
+      { index: 0, code: "2000064", efrValue: 25.0, clientValue: 0.0 },
+    ],
+  });
+
   // --- Lusíadas (single consultation) ---
   await testInvoice({
     name: "Lusíadas",

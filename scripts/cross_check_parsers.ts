@@ -158,6 +158,7 @@ async function main() {
   console.log("Cross-checking Python vs browser invoice parsers...");
 
   await crossCheck("CUF", resolve(REPO_ROOT, "invoices", "invoice.pdf"));
+  await crossCheck("CUF 02", resolve(REPO_ROOT, "invoices", "invoice_cuf.pdf"));
   await crossCheck("Lusíadas", resolve(REPO_ROOT, "invoices", "invoice-lusiadas.pdf"));
   await crossCheck("Lusíadas 02", resolve(REPO_ROOT, "invoices", "invoice-lusiadas02.pdf"));
 

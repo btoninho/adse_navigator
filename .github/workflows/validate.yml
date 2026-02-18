@@ -28,6 +28,9 @@ jobs:
       - name: Check test invoice against pricing table
         run: python3 scripts/check_invoice.py invoices/invoice.pdf
 
+      - name: Check CUF test invoice against pricing table
+        run: python3 scripts/check_invoice.py invoices/invoice_cuf.pdf
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
